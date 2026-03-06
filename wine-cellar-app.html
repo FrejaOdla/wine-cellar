@@ -1292,8 +1292,8 @@ function logConsumption() {
 
   wine.stock -= qty;
   const entry = { id: uid(), wineId, wineName: wine.name, qty, date, event, notes, ts: Date.now() };
-  await saveWineToDb(wine);
-  await saveLogToDb(entry);
+  saveWineToDb(wine);
+  saveLogToDb(entry);
   document.getElementById('log-event').value = '';
   document.getElementById('log-notes').value = '';
   document.getElementById('log-qty').value = 1;
