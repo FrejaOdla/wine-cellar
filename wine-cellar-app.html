@@ -7,8 +7,6 @@
 <!-- Firebase compat SDK v9 -->
 
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -1054,16 +1052,6 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// ===== FIREBASE =====
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDAZ-1h0z0oI10Q99iZUHcHn5hbndSa7Lc",
-  authDomain: "wine-cellar-e49a6.firebaseapp.com",
-  projectId: "wine-cellar-e49a6",
-  storageBucket: "wine-cellar-e49a6.appspot.com",
-  appId: "1:721981988984:web:6959f5646f959181274d8d"
-};
-let db = null;
-
 // ===== STATE =====
 let wines = [];
 let consumptionLog = [];
@@ -1071,60 +1059,44 @@ let settings = { warnLevel: 6, critLevel: 3, currency: 'R', usdRate: 18 };
 let currentFilter = 'all';
 let editingId = null;
 
-function saveWineToDb(w) {
-  db.collection('wines').doc(w.id).set(w)
-    .then(() => toast('✓ Saved to cloud'))
-    .catch(e => toast('❌ Save failed: ' + e.message));
+function save() {
+  localStorage.setItem('cellar_wines', JSON.stringify(wines));
+  localStorage.setItem('cellar_log', JSON.stringify(consumptionLog));
+  localStorage.setItem('cellar_settings', JSON.stringify(settings));
 }
-function deleteWineFromDb(id) { db.collection('wines').doc(id).delete(); }
-function saveLogToDb(e) { db.collection('consumptionLog').doc(e.id).set(e); }
-function deleteLogFromDb(id) { db.collection('consumptionLog').doc(id).delete(); }
-function saveSettingsToDb() { db.collection('meta').doc('settings').set(settings); }
+function saveWineToDb(w) {
+  const idx = wines.findIndex(x => x.id === w.id);
+  if (idx >= 0) wines[idx] = w; else wines.push(w);
+  save();
+}
+function deleteWineFromDb(id) { wines = wines.filter(w => w.id !== id); save(); }
+function saveLogToDb(e) {
+  const idx = consumptionLog.findIndex(x => x.id === e.id);
+  if (idx >= 0) consumptionLog[idx] = e; else consumptionLog.push(e);
+  save();
+}
+function deleteLogFromDb(id) { consumptionLog = consumptionLog.filter(l => l.id !== id); save(); }
+function saveSettingsToDb() { save(); }
 function clearData() {
   if (!confirm('Clear ALL cellar data? This cannot be undone.')) return;
-  db.collection('wines').get().then(s => s.forEach(d => d.ref.delete()));
-  db.collection('consumptionLog').get().then(s => s.forEach(d => d.ref.delete()));
-  toast('All data cleared');
+  wines = []; consumptionLog = []; save(); refresh(); toast('All data cleared');
 }
 
 function init() {
+  wines = JSON.parse(localStorage.getItem('cellar_wines') || '[]');
+  consumptionLog = JSON.parse(localStorage.getItem('cellar_log') || '[]');
+  settings = JSON.parse(localStorage.getItem('cellar_settings') || JSON.stringify(settings));
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'flex';
   document.getElementById('log-date').valueAsDate = new Date();
-
-  if (typeof firebase === 'undefined') {
-    alert('Firebase failed to load. Please check your internet connection and refresh.');
-    return;
-  }
-
-  if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-  db = firebase.firestore();
-
-  db.collection('wines').onSnapshot(snap => {
-    wines = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (wines.length === 0) seedData();
-    refresh(); renderDashboard();
-  });
-
-  db.collection('consumptionLog').onSnapshot(snap => {
-    consumptionLog = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    refresh(); renderDashboard();
-  });
-
-  db.collection('meta').doc('settings').get().then(doc => {
-    if (doc.exists) {
-      settings = { ...settings, ...doc.data() };
-    } else {
-      saveSettingsToDb();
-    }
-    document.getElementById('thresh-warn').value = settings.warnLevel;
-    document.getElementById('thresh-crit').value = settings.critLevel;
-    document.getElementById('currency-sym').value = settings.currency;
-    document.getElementById('usd-rate').value = settings.usdRate || 18;
-    refresh();
-  });
-
-  toast('Connecting to your cellar... ☁');
+  document.getElementById('thresh-warn').value = settings.warnLevel;
+  document.getElementById('thresh-crit').value = settings.critLevel;
+  document.getElementById('currency-sym').value = settings.currency;
+  document.getElementById('usd-rate').value = settings.usdRate || 18;
+  if (wines.length === 0) seedData();
+  refresh();
+  renderDashboard();
+  toast('Cellar loaded ✓');
 }
 
 function saveFirebaseConfig() {
@@ -1322,6 +1294,7 @@ function logConsumption() {
   const entry = { id: uid(), wineId, wineName: wine.name, qty, date, event, notes, ts: Date.now() };
   saveWineToDb(wine);
   saveLogToDb(entry);
+  refresh();
   document.getElementById('log-event').value = '';
   document.getElementById('log-notes').value = '';
   document.getElementById('log-qty').value = 1;
@@ -1331,6 +1304,7 @@ function logConsumption() {
 function deleteLog(id) {
   if (!confirm('Remove this log entry?')) return;
   deleteLogFromDb(id);
+  refresh();
   toast('Log entry removed');
 }
 
@@ -1424,13 +1398,15 @@ function saveWine() {
   };
 
   saveWineToDb(w);
-  refresh(); closeModal();
+  refresh();
+  closeModal();
   toast(editingId ? 'Wine updated' : 'Wine added to cellar');
 }
 
 function deleteWine(id) {
   if (!confirm('Remove this wine from the cellar?')) return;
   deleteWineFromDb(id);
+  refresh();
   toast('Wine removed');
 }
 
@@ -1443,6 +1419,7 @@ function adjustStock(id) {
   if (isNaN(parsed) || parsed < 0) { toast('Invalid number'); return; }
   w.stock = parsed;
   saveWineToDb(w);
+  refresh();
   toast(`Stock updated: ${w.stock} bottles`);
 }
 
@@ -1451,21 +1428,9 @@ function previewImage(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX = 400;
-      let w = img.width, h = img.height;
-      if (w > h) { if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; } }
-      else { if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; } }
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      const compressed = canvas.toDataURL('image/jpeg', 0.7);
-      document.getElementById('f-img').value = compressed;
-      document.getElementById('img-preview-img').src = compressed;
-      document.getElementById('img-preview-wrap').style.display = 'block';
-    };
-    img.src = e.target.result;
+    document.getElementById('f-img').value = e.target.result;
+    document.getElementById('img-preview-img').src = e.target.result;
+    document.getElementById('img-preview-wrap').style.display = 'block';
   };
   reader.readAsDataURL(file);
 }
@@ -1583,7 +1548,6 @@ function renderWineList() {
 
 function downloadWineListHTML() {
   const content = document.getElementById('wine-list-output').innerHTML;
-  const scriptClose = '</' + 'script>';
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Montserrat',sans-serif;background:white;color:#1C1C1C;}${document.querySelector('style').textContent}</style></head><body>${content}</body></html>`;
   const blob = new Blob([html], {type:'text/html'});
   const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:'wine-list.html'});
@@ -1596,7 +1560,7 @@ function saveSettings() {
   settings.critLevel = parseInt(document.getElementById('thresh-crit').value) || 3;
   settings.currency = document.getElementById('currency-sym').value || 'R';
   settings.usdRate = parseFloat(document.getElementById('usd-rate').value) || 18;
-  saveSettingsToDb(); refresh();
+  save(); refresh();
   toast('Settings saved');
 }
 
@@ -1615,10 +1579,11 @@ function importData(event) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (data.wines) data.wines.forEach(w => saveWineToDb(w));
-      if (data.consumptionLog) data.consumptionLog.forEach(l => saveLogToDb(l));
-      if (data.settings) { settings = { ...settings, ...data.settings }; saveSettingsToDb(); }
-      toast('Data imported — ' + (data.wines?.length || 0) + ' wines uploaded');
+      if (data.wines) wines = data.wines;
+      if (data.consumptionLog) consumptionLog = data.consumptionLog;
+      if (data.settings) settings = { ...settings, ...data.settings };
+      save(); refresh();
+      toast('Data imported — ' + (data.wines?.length || 0) + ' wines loaded');
     } catch(err) { toast('Invalid file'); }
   };
   reader.readAsText(file);
